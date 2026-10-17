@@ -1,0 +1,39 @@
+on early-init
+    # La política se carga en enforcing (el LK no pasa androidboot.selinux).
+    # bootable/recovery trae permissive.sh para esto, pero el init.rc de este
+    # árbol nunca arranca el servicio set_permissive.
+    setenforce 0
+
+on fs
+    # MT6572 uses f_adb directly, not FunctionFS — override the generic USB setup
+    write /sys/class/android_usb/android0/enable 0
+    write /sys/class/android_usb/android0/idVendor 1004
+    write /sys/class/android_usb/android0/idProduct 631F
+    write /sys/class/android_usb/android0/functions adb
+    write /sys/class/android_usb/android0/iManufacturer ${ro.product.manufacturer}
+    write /sys/class/android_usb/android0/iProduct ${ro.product.model}
+
+# ro.serialno viene vacío en recovery (el bootloader no pasa androidboot.serialno
+# por cmdline); igual que en vee4ss/vee5ss, diferir a un trigger que solo dispara
+# si la propiedad llega a tener un valor real, para no fallar la expansión en "on fs".
+on property:ro.serialno=*
+    write /sys/class/android_usb/android0/iSerial ${ro.serialno}
+
+on boot
+    setprop persist.service.adb.enable 1
+    setprop service.adb.root 1
+    setprop sys.usb.config adb
+
+on property:sys.usb.config=adb
+    write /sys/class/android_usb/android0/enable 0
+    write /sys/class/android_usb/android0/functions adb
+    write /sys/class/android_usb/android0/enable 1
+    start adbd
+    setprop sys.usb.state adb
+
+on property:sys.usb.config=mtp,adb
+    write /sys/class/android_usb/android0/enable 0
+    write /sys/class/android_usb/android0/functions mtp,adb
+    write /sys/class/android_usb/android0/enable 1
+    start adbd
+    setprop sys.usb.state mtp,adb
